@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulazione Spaziale</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Arial', sans-serif; background-color: #000; }
+        canvas { display: block; }
+        .info-container {
+            position: absolute;
+            bottom: 1rem;
+            left: 1rem;
+            background: rgba(0, 0, 0, 0.4);
+            -webkit-backdrop-filter: blur(5px);
+            backdrop-filter: blur(5px);
+            border: 1px solid #00ffff;
+            padding: 0.5rem;
+            font-size: 0.75rem;
+            color: #00ffff;
+            font-family: 'Courier New', Courier, monospace;
+            text-shadow: 0 0 5px #00ffff, 0 0 10px #00ffff;
+            border-radius: 8px;
+            pointer-events: none;
+        }
+        .cursor {
+            font-weight: bold;
+            -webkit-animation: blink 1s step-end infinite;
+            animation: blink 1s step-end infinite;
+            text-shadow: 0 0 5px #00ffff;
+        }
+        @-webkit-keyframes blink {
+            from, to { visibility: hidden; }
+            50% { visibility: visible; }
+        }
+        @keyframes blink {
+            from, to { visibility: hidden; }
+            50% { visibility: visible; }
+        }
+        @media (max-width: 600px) {
+            .info-container {
+                bottom: 0.5rem;
+                left: 0.5rem;
+                font-size: 0.6rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="info-container">
+        <p id="instructions-text"></p>
+    </div>
+    <script src="./three.min.js"></script>
+    <script src="./OrbitControls.js"></script>
+    <script>
+        // Variabili globali per la scena 3D
+        let scene, camera, renderer, controls;
+        let earth, moon, stars;
+        let sunLight;
+        
+        // Costanti per le velocità di rotazione e orbita basate sui dati reali
+        const EARTH_ROTATION_SPEED = 0.00005; 
+        const MOON_ORBIT_SPEED = 0.000005; 
+        
+        let moonOrbitAngle = 0;
+
+        function calculateInitialMoonPhase() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = now.getMonth() + 1;
+            const day = now.getDate();
+            const hour = now.getHours();
+            const minute = now.getMinutes();
+            const second = now.getSeconds();
+            const JD = 367 * year - Math.floor(7 * (year + Math.floor((month + 9) / 12)) / 4) + Math.floor(275 * month / 9) + day + 1721013.5 + (hour + minute / 60 + second / 3600) / 24;
+            const JD_NEW_MOON_REF = 2451550.1;
+            const MOON_SYNODIC_PERIOD = 29.530588853; 
+            const elapsedCycles = (JD - JD_NEW_MOON_REF) / MOON_SYNODIC_PERIOD;
+            const phaseFraction = elapsedCycles - Math.floor(elapsedCycles);
+            return phaseFraction * 2 * Math.PI;
+        }
+        
+        function calculateInitialEarthRotation() {
+            const now = new Date();
+            const localHours = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
+
+            const rotationInDegrees = localHours * 15;
+            
+            const initialRotationAngle = THREE.MathUtils.degToRad(rotationInDegrees + 90);
+            return initialRotationAngle;
+        }
+
+        function createStarTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 16;
+            canvas.height = 16;
+            const context = canvas.getContext('2d');
+            const gradient = context.createRadialGradient(
+                canvas.width / 2,
+                canvas.height / 2,
+                0,
+                canvas.width / 2,
+                canvas.height / 2,
+                canvas.width / 2
+            );
+            gradient.addColorStop(0, 'rgba(255,255,255,1)');
+            gradient.addColorStop(0.2, 'rgba(255,255,255,1)');
+            gradient.addColorStop(1, 'rgba(0,0,0,1)');
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // MODIFICA QUI: Riduciamo l'intensità della luce solare
+            sunLight = new THREE.PointLight(0xffffff, 2, 0, 2); 
+            sunLight.position.set(10, 0, 0);
+            scene.add(sunLight);
+            scene.add(new THREE.AmbientLight(0x101010)); 
+
+            const textureLoader = new THREE.TextureLoader();
+            const earthTexture = textureLoader.load('./earth_atmos.jpg');
+            const cityLightsTexture = textureLoader.load('./earth_lights.png');
+            const moonTexture = textureLoader.load('./moon_1024.jpg');
+
+            const earthGeometry = new THREE.SphereGeometry(2, 32, 32);
+            const earthMaterial = new THREE.MeshStandardMaterial({
+                map: earthTexture,
+                emissiveMap: cityLightsTexture,
+                emissive: new THREE.Color(0xffffff),
+                // MODIFICA QUI: Riduciamo l'intensità emissiva delle luci cittadine
+                emissiveIntensity: 0.2
+            });
+            earth = new THREE.Mesh(earthGeometry, earthMaterial);
+            
+            earth.rotation.y = calculateInitialEarthRotation(); 
+            scene.add(earth);
+
+            const moonGeometry = new THREE.SphereGeometry(0.5, 32, 32);
+            const moonMaterial = new THREE.MeshStandardMaterial({
+                map: moonTexture
+            });
+            moon = new THREE.Mesh(moonGeometry, moonMaterial);
+            scene.add(moon);
+
+            moonOrbitAngle = calculateInitialMoonPhase();
+            
+            camera.position.z = 10;
+            camera.lookAt(0, 0, 0);
+
+            const starCount = 1000;
+            const starGeometry = new THREE.BufferGeometry();
+            const positions = [];
+            const starSpread = 400;
+            for (let i = 0; i < starCount; i++) {
+                const x = THREE.MathUtils.randFloat(-starSpread / 2, starSpread / 2);
+                const y = THREE.MathUtils.randFloat(-starSpread / 2, starSpread / 2);
+                const z = THREE.MathUtils.randFloat(-starSpread / 2, starSpread / 2);
+                positions.push(x, y, z);
+            }
+            starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            const starMaterial = new THREE.PointsMaterial({
+                map: createStarTexture(),
+                size: 1.5,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                sizeAttenuation: true
+            });
+            stars = new THREE.Points(starGeometry, starMaterial);
+            scene.add(stars);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.rotateSpeed = 0.5;
+            controls.minDistance = 2.5;
+            controls.maxDistance = 20;
+
+            window.addEventListener('resize', onWindowResize, false);
+
+            document.getElementById('instructions-text').innerHTML = "Trascina con un dito per ruotare.<br>Trascina con due dita per spostare.<br>Pizzica per zoomare. <span class='cursor'>_</span>";
+        }
+        
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            earth.rotation.y += EARTH_ROTATION_SPEED;
+            moonOrbitAngle += MOON_ORBIT_SPEED;
+            moon.position.set(
+                Math.cos(moonOrbitAngle) * 5,
+                0,
+                Math.sin(moonOrbitAngle) * 5
+            );
+            moon.rotation.y = moonOrbitAngle;
+            renderer.render(scene, camera);
+        }
+
+        window.onload = function() {
+            init();
+            animate();
+        };
+    </script>
+</body>
+</html>
