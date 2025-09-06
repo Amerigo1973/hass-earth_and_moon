@@ -1,6 +1,3 @@
-Certamente. Ecco la versione inglese aggiornata del file `README.md`, completa di tutte le istruzioni e con il titolo "The Earth and Moon System".
-
----
 
 ### The Earth and Moon System
 
