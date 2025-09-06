@@ -33,3 +33,5 @@ To run the simulation on Home Assistant, follow these steps:
 
 [Home Assistant How To - Panel iFrame component](https://www.youtube.com/watch?v=k6gRagYTBU8)
 This video provides a tutorial on how to use the `panel_iframe` component in Home Assistant, which is similar to the `iframe` card.
+
+https://youtu.be/QBpzT00t_Kw
